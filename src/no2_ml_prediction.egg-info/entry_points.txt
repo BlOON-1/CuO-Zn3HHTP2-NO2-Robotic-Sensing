@@ -1,0 +1,2 @@
+[console_scripts]
+no2-ml = no2_ml.cli:main

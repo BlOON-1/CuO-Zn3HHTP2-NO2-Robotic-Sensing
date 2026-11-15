@@ -1,0 +1,27 @@
+Linear:
+  params: {}
+  search: {}
+Ridge:
+  params: {}
+  search:
+    alpha: [1, 10]
+SVR:
+  params: {}
+  search:
+    C: [1, 10]
+RandomForest:
+  params:
+    n_estimators: 60
+    min_samples_leaf: 2
+    n_jobs: 1
+  search:
+    max_depth: [2, null]
+XGBoost:
+  params:
+    n_estimators: 60
+    max_depth: 2
+    learning_rate: 0.05
+    objective: reg:squarederror
+    n_jobs: 1
+  search:
+    reg_lambda: [1, 10]

@@ -1,0 +1,1 @@
+"""Explicit grouped partition contracts."""

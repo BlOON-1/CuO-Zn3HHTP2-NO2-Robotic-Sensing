@@ -1,0 +1,5 @@
+version: conservative_v1
+ceiling_ohm: 510000000.0
+hampel_window_s: 15.0
+hampel_sigma: 8.0
+minimum_spike_fraction: 0.02

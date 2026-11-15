@@ -1,0 +1,11 @@
+# Template only: no bundled research data, never run automatically.
+input_manifest: ../data/reviewed_cycles.csv
+output_dir: ../runs/first_reviewed_run
+preprocessing_config: preprocessing.yaml
+features_config: features.yaml
+models_config: models.yaml
+validation_config: validation.yaml
+feature_set: legacy_peak_r60_slope
+models: [Linear, Ridge, SVR, RandomForest, XGBoost]
+seed: 42
+purpose: research

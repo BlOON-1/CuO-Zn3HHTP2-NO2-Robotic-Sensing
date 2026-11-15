@@ -1,0 +1,4 @@
+outer_strategy: leave_one_group_out
+outer_folds: 3  # Used only when outer_strategy is explicitly group_kfold.
+inner_folds: 3
+scoring: neg_mean_absolute_error

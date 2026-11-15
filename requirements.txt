@@ -1,0 +1,9 @@
+# Reference CPU environment; clean-environment reproducibility is not yet established.
+numpy==1.26.4
+pandas==2.3.3
+scipy==1.13.1
+scikit-learn==1.6.1
+xgboost==2.1.4
+matplotlib==3.9.4
+joblib==1.5.2
+PyYAML==6.0.3

@@ -1,0 +1,5 @@
+# Immutable built-in definitions; no unversioned parameter overrides.
+default: legacy_peak_r60_slope
+available:
+  - legacy_peak_r60_slope@1.0.0
+  - paper_peak_slope_auc@1.0.0

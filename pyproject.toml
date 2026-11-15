@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "no2-ml-prediction"
+version = "0.1.0"
+description = "Versioned resistance features and leakage-aware grouped NO2 regression"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "numpy==1.26.4", "pandas==2.3.3", "scipy==1.13.1",
+  "scikit-learn==1.6.1", "xgboost==2.1.4", "matplotlib==3.9.4",
+  "joblib==1.5.2", "PyYAML==6.0.3"
+]
+
+[project.scripts]
+no2-ml = "no2_ml.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

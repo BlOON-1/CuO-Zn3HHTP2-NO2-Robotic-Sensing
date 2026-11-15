@@ -1,2 +1,209 @@
-# CuO-Zn3HHTP2-NO2-Robotic-Sensing
-Python code for NO₂ sensor signal processing, feature extraction, supervised regression, and grouped cross-validation in robotic gas-mapping research.
+# NO₂-ML-Prediction
+
+Versioned, CPU-based regression software for resistance signals from a CuO@Zn₃(HHTP)₂
+NO₂ sensor. Related manuscript: *Room-Temperature Robotic Mapping of NO2 with a
+Porous CuO@Zn3(HHTP)2 Chemiresistor*. Authors, DOI and citation: **to be confirmed**.
+
+This is a P0 software refactor, not a reproduction of manuscript performance.
+No study data, historical fitted models, tuned illustrative predictions or target-metric
+generators are bundled. Artificial inputs and test-trained models belong only under
+`tests/`. The software currently performs **offline, reviewed-cycle prediction**;
+a prediction command is not evidence of real-time robotic monitoring.
+
+## Features
+
+- Read-only, unit-aware multi-channel instrument TXT parsing; explicit input manifests.
+- Versioned QC, separate detection signals and manually approved cycle boundaries.
+- Shared raw-signal feature extraction for training and inference, with two immutable versions.
+- Linear, Ridge, SVR, Random Forest and XGBoost registry; no deep models included.
+- Fold-local imputation/scaling, outer grouped CV and inner grouped grid search.
+- Separate pooled OOF, per-fold, fold mean/SD evaluation; seven metrics with validity reasons.
+- Trusted, checksum-checked Pipeline artifacts and standalone CSV prediction.
+- Saved-result parity/residual/model comparison rendering, without training or edited predictions.
+
+## Installation and environment
+
+Python **3.9–3.12** is the intended range for the pinned reference dependencies;
+this implementation was tested in an existing Python 3.9.24 CPU environment.
+`pyproject.toml` specifies >=3.9; other Python/platform combinations and a completely
+clean installation have not been validated. No CUDA or Codex runtime is required.
+
+```powershell
+cd .\NO2-ML-Prediction
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
+python -m pip install --no-deps -e .
+python -m no2_ml.cli --help
+```
+
+These are user-run installation instructions. The refactor does not install or upgrade
+system dependencies. Versions: NumPy 1.26.4, pandas 2.3.3, SciPy 1.13.1,
+scikit-learn 1.6.1, XGBoost 2.1.4, Matplotlib 3.9.4, joblib 1.5.2, PyYAML 6.0.3.
+Tests use the Python standard library `unittest`; pytest is not required.
+
+For an existing compatible environment, run without installation:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src).Path
+$env:PYTHONDONTWRITEBYTECODE = '1'
+python -m unittest discover -s tests -t . -v
+```
+
+## Inputs
+
+Instrument files are tab-separated, with a header such as `时间(毫秒)` or `时间(s)`
+and resistance fields such as `通道2电阻(欧姆)` or `通道2电阻(MΩ)`.
+Time position is discovered from the header, not a fixed column index.
+Supported encodings: UTF-8 with optional BOM, GB18030, UTF-16; an explicit encoding
+can also be supplied to the reader API. Internal units are **s, ohm, ppm**.
+Invalid time is rejected; invalid resistance is rejected by default, or retained and
+flagged explicitly. Raw files are never rewritten. Labels are never inferred from filenames.
+
+A UTF-8 CSV manifest contains one reviewed cycle per row:
+
+```text
+sample_id,source_id,source_file,group_id,channel,reference_ppm,baseline_start_s,exposure_start_s,exposure_end_s,recovery_end_s,approved,boundary_version
+```
+
+`source_file` is relative to the manifest, or absolute. `source_id` identifies the
+original acquisition, not the cycle. All cycles of one original file must share a
+group. Merge related sources into a larger group when experiment design requires it.
+`approved` must explicitly be true and `boundary_version` must be `reviewed_v1`.
+Prediction does not require `reference_ppm`, but does require the same reviewed cycle
+and channel information. The software cannot verify the scientific validity of a human approval.
+
+`legacy08_mask_v1` additionally requires `anomaly_mask_file`, a CSV with matching
+`time_s` and explicit boolean `candidate_anomaly` values. Without this archived mask
+the old QC rule cannot be claimed to have been reproduced. See [feature definitions](docs/feature_definitions.md).
+
+## Features and version contracts
+
+| Set | Unique version | Ordered inputs |
+| --- | --- | --- |
+| Historical feature definitions | `legacy_peak_r60_slope@1.0.0` | `max_response`, `resp_60s`, `initial_slope` |
+| Manuscript target definitions | `paper_peak_slope_auc@1.0.0` | `max_response`, `initial_slope`, `auc_0_120` |
+
+Both use `S=Ra/R`; Peak is **max(S)**, slope is an OLS slope in s⁻¹,
+and AUC is the measured-timestamp integral of **S−1** over the supported 0–120 s window,
+in seconds. Feature metadata include a definition fingerprint and fixed order.
+Changing a definition requires a new version; editing a config cannot silently change
+the meaning of an existing version. Neither new version inherits any published performance.
+
+## Training and validation
+
+Copy `configs/experiment.yaml` to a new config and provide your reviewed manifest and
+a **new** output directory. Relative paths resolve from the experiment config.
+Related configs define QC, enabled feature versions, models/search spaces and validation.
+Set `feature_set` to either name above and choose models without changing Python code.
+
+```powershell
+python -m no2_ml.cli extract --config configs/experiment.yaml --output runs/features.csv
+python -m no2_ml.cli train --config configs/experiment.yaml
+```
+
+The example config is a template: no research manifest is supplied, and these commands
+must not be interpreted as already executed on study data.
+
+Default outer validation is LeaveOneGroupOut; `outer_strategy: group_kfold` explicitly
+enables grouped outer K-fold using `outer_folds`. Inner `GroupKFold(3)` and GridSearchCV
+use only each outer training subset. Median imputation and StandardScaler are fitted
+inside each training Pipeline. A single shared outer split list is used for all candidates.
+Inner validation chooses hyperparameters **and** the model family for `Nested_selection`.
+All errors abort explicitly; no failed model is silently removed from comparison.
+
+Final refit is separate: full-data grouped inner CV chooses a deployment candidate, then
+fits its Pipeline on all approved training rows. Its training predictions do not replace
+OOF predictions. Candidate-family OOF rankings are descriptive; choosing a family after
+inspecting them is not an unbiased external test.
+
+See [training](docs/model_training.md) and [cross-validation](docs/cross_validation.md).
+
+## Metrics and result export
+
+Bias=`mean(predicted−reference)`; positive means overestimation. MSE is ppm²,
+MAE/RMSE/Bias are ppm, RMSLE and R² are dimensionless. Negative R² is retained.
+R² is undefined for constant targets or fewer than two samples. RMSLE requires
+nonnegative predictions and targets and never clips values. Adjusted R² is available
+only for an explicitly declared, full-rank unpenalized Linear **training diagnostic**
+with intercept and sufficient degrees of freedom; it is N/A for normal OOF comparisons.
+
+```powershell
+python -m no2_ml.cli evaluate --input-csv runs/first_reviewed_run/out_of_fold_predictions.csv --output runs/rechecked_metrics.csv
+```
+
+`metrics.csv` is long-format: metric name/value/unit/status/reason, model, feature version,
+scope, n, fold and grouping metadata. `pooled_oof`, `per_fold`, `fold_mean` and `fold_sd`
+are distinct scopes. Undefined folds are counted explicitly; their omission never silently
+turns a partial mean into a complete result. The scalar API also supports `single_test_set`.
+An independent external test splitter is not added in this P0 release.
+
+Run outputs: extracted features, OOF predictions, metrics, outer/inner splits, complete
+search records, resolved configuration, status and a final refit artifact. Existing run
+directories/files are rejected rather than overwritten. No Excel/private Node dependency
+is required; CSV is the canonical result export.
+
+## Save, load and predict
+
+```powershell
+python -m no2_ml.cli predict --manifest data/new_reviewed_cycles.csv --artifact runs/first_reviewed_run/artifact --trusted-model --feature-version legacy_peak_r60_slope --output runs/new_predictions.csv
+```
+
+Only use `--trusted-model` for an artifact whose origin you trust. A checksum detects
+accidental modification; it does not authenticate untrusted executable joblib content.
+The loader checks metadata, exact recorded environment and feature order before use.
+Inference uses the artifact's QC and the same feature extractor as training; missing raw
+signals are never synthesized. Individual unavailable features retain a warning and may
+be imputed by the already fitted training Pipeline; wholly missing rows are rejected.
+
+See [reproducibility](docs/reproducibility.md) for artifact contents and limitations.
+
+## Render saved results
+
+```powershell
+python -m no2_ml.cli render --input-csv runs/first_reviewed_run/out_of_fold_predictions.csv --output-dir runs/figures_new --dpi 600
+python scripts/09_render_exploratory.py --results-dir runs/first_reviewed_run --output-dir runs/figures_compat --dpi 600
+python scripts/plot_figure5b.py --input-csv runs/first_reviewed_run/out_of_fold_predictions.csv --output-dir runs/figures_parity --dpi 600
+```
+
+The new compatibility wrapper fixes the old `--results-dir`/`--input-csv` mismatch
+without modifying the historical scripts. It resolves an existing saved OOF, combined,
+or legacy prediction CSV; it never falls back to demonstration data or invokes training.
+PNG/PDF/SVG show parity, technical-repeat SD, residuals and MAE/RMSE comparisons.
+Input hashes are checked. Legacy schemas are adapted as `historical_unverified@0`;
+they are not assigned a new feature version without provenance review. Existing paper
+figures have not been re-rendered or changed by this refactor.
+
+## Complete software-only smoke test
+
+Run from this project root in a compatible environment. All generated inputs and
+test-trained artifacts stay beneath ignored `tests/_artifacts/`.
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path .\src).Path
+$env:PYTHONDONTWRITEBYTECODE = '1'
+python -m unittest discover -s tests -t . -v
+python -m tests.make_fixture
+python -m no2_ml.cli train --config tests/_artifacts/experiment.yaml
+python -m no2_ml.cli predict --manifest tests/_artifacts/fixture/manifest.csv --artifact tests/_artifacts/software_run/artifact --trusted-model --output tests/_artifacts/software_predictions.csv
+python -m no2_ml.cli render --results-dir tests/_artifacts/software_run --output-dir tests/_artifacts/software_figures --dpi 150
+```
+
+Fixture creation and run directories are exclusive; rerunning into the same directory
+is intentionally rejected. Use an unused output location or inspect the existing test output.
+These commands exercise software behavior, not experimental validity or manuscript metrics.
+
+## Limitations and publication status
+
+- No real-data retraining, result reproduction, model ranking or external validation was performed.
+- Sensor identity, reference calibration, physical grouping, valve boundaries and online feasibility
+  must be confirmed before study use. Automatic candidates never become approved automatically.
+- The new time-based conservative QC is explicitly distinct from the historical upstream mask.
+- CNN/GCN/MLP and live robot acquisition/mapping are outside this implementation.
+- Exact dependency checks are conservative; broader compatibility requires explicit review.
+- The pinned environment is a reference, not a claim of successful clean-platform reproduction.
+- License is **pending owner decision**; see `docs/LICENSE_PENDING.md`. No open-source
+  permission, journal compliance certification, Git commit or GitHub upload is implied.
+
+Development history: [CHANGELOG](docs/CHANGELOG.md). Actual validation and remaining work:
+[REFACTORING_REPORT](REFACTORING_REPORT.md).
